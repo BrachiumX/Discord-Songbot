@@ -6,10 +6,20 @@ import yt_dlp
 from urllib.parse import urlparse
 import concurrent.futures
 
+
+
+#Setup
+
+
 intents = discord.Intents.default()
 intents.message_content = True
 command_prefix = '-'
 bot = commands.Bot(command_prefix=command_prefix, intents=intents, help_command=None)
+
+
+
+#Main stateholding object and class for guilds
+
 
 state_dict = {}
 
@@ -22,6 +32,11 @@ class State:
         self.search_list = []
 
 process_pool = concurrent.futures.ProcessPoolExecutor()
+
+
+
+##Commands
+
 
 @bot.event
 async def on_ready():
@@ -41,29 +56,13 @@ async def join(ctx):
     asyncio.create_task(auto_disconnect_after_delay(ctx.guild.id))
     asyncio.create_task(player(ctx))
 
-async def get_or_join_voice(ctx):
-    if not ctx.author.voice:
-        await ctx.send("You need to be in a voice channel.")
-        return None
-        
-    if not check_same_voice(ctx):
-        await join(ctx)
-        return ctx.voice_client
-    
-def check_same_voice(ctx):
-    return ctx.author.voice and ctx.voice_client and ctx.voice_client.channel == ctx.author.voice.channel
-
-async def assert_same_voice(ctx):
-    if not check_same_voice(ctx):
-        ctx.send("You need to be in the same voice chat as the bot.")
-        return False
-    return True
 
 @bot.command(aliases=['l'])
 async def leave(ctx):
     wipe(ctx.guild.id)
     if ctx.voice_client:
         await ctx.voice_client.disconnect()
+
 
 @bot.command(aliases=['c'])
 async def current(ctx):
@@ -77,6 +76,7 @@ async def current(ctx):
         return
     await ctx.send(f"Currently playing: **{currently_playing}**")
 
+
 @bot.command(aliases=['p'])
 async def play(ctx, *, query:str):
     if get_or_join_voice(ctx) == None:
@@ -85,6 +85,7 @@ async def play(ctx, *, query:str):
     stream, title = await get_stream_youtube(ctx, query)
     
     await ctx.send(f"Added to the list: **{title}**")
+
 
 @bot.command(aliases=['pm'])
 async def playmul(ctx, *, query:str):
@@ -95,6 +96,7 @@ async def playmul(ctx, *, query:str):
     for item in items:
         asyncio.create_task(play(ctx, query=item))
 
+
 @bot.command(aliases=['s'])
 async def skip(ctx):
     if not assert_same_voice(ctx):
@@ -103,6 +105,7 @@ async def skip(ctx):
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
         await ctx.send(f"Skipping **{get_state(ctx).currently_playing}**.")
+
 
 @bot.command(aliases=['q'])
 async def queue(ctx):
@@ -125,6 +128,7 @@ async def queue(ctx):
 
     await ctx.send(message)
 
+
 @bot.command(aliases=['h'])
 async def help(ctx):
     message = f"❓\n"
@@ -136,13 +140,15 @@ async def help(ctx):
     message += f"**{command_prefix}join** or **{command_prefix}j** to have the bot join your current channel\n"
     message += f"**{command_prefix}leave** or **{command_prefix}l** to disconnect the bot from currently connected channel\n"
     await ctx.send(message)
-    
+
+
 @bot.command(aliases=['a'])
 async def answer(ctx, *, answer:str):
     if not assert_same_voice(ctx):
         return
     state = get_state(ctx)
     await state.question_callback(ctx, answer)
+
 
 @bot.command(aliases=['se'])
 async def search(ctx, *, query:str):
@@ -164,13 +170,10 @@ async def search(ctx, *, query:str):
     await ctx.send(message)
     get_state(ctx).question_callback()   
 
-async def search_callback(ctx, answer:str):
-    if not str.isdigit(answer):
-        await ctx.send("Searching can only be answered with (positive) numbers.")
-        return
-    selected = get_state(ctx).search_list[int(answer) - 1]
-    await ctx.send(f"Selected **{selected[1]}**.")
-    await play(ctx, selected[1])
+
+
+# Tasks to be run by executor
+
 
 def search_task(query, limit):
     search = {
@@ -188,11 +191,7 @@ def search_task(query, limit):
             title.append(result[i]['title'])
         return zip(url, title)
     
-async def search_youtube(ctx, query, limit):
-    list = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, limit)
-    state = get_state(ctx)
-    state.search_list = list
-    return list
+
 
 def stream_task(query):
     search = {
@@ -225,11 +224,10 @@ def stream_task(query):
         
         return stream_url, title
 
-async def get_stream_youtube(ctx, query):
-    queue = get_state(ctx).queue
-    stream, title = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, query)
-    await queue.put([stream, title])
-    return stream, title
+
+
+#B ackground tasks
+
 
 async def auto_disconnect_after_delay(ctx, delay=240):
     while True:
@@ -245,6 +243,7 @@ async def auto_disconnect_after_delay(ctx, delay=240):
                 wipe(guild)
                 print(f"Disconnected from voice in guild {guild}")
                 await ctx.send(f"Disconnected from the channel due to inactivity.")
+
 
 async def player(ctx):
     vc = discord.utils.get(bot.voice_clients, guild__id=ctx.guild.id)
@@ -269,19 +268,84 @@ async def player(ctx):
         if not vc:
             return
 
+
+
+# State related functions
+
+
 def wipe(guild_id):
     if state_dict[guild_id] != None:
         state_dict[guild_id] = None
 
-def is_url(string):
-    parsed = urlparse(string)
-    return all([parsed.scheme, parsed.netloc])
 
 def get_state(ctx):
     return state_dict[get_guild(ctx)]
 
+
 def get_guild(ctx):
     return str(ctx.guild.id)
 
+
+
+# Voice chat related helper functions
+
+
+async def get_or_join_voice(ctx):
+    if not ctx.author.voice:
+        await ctx.send("You need to be in a voice channel.")
+        return None
+        
+    if not check_same_voice(ctx):
+        await join(ctx)
+        return ctx.voice_client
+
+
+def check_same_voice(ctx):
+    return ctx.author.voice and ctx.voice_client and ctx.voice_client.channel == ctx.author.voice.channel
+
+
+async def assert_same_voice(ctx):
+    if not check_same_voice(ctx):
+        ctx.send("You need to be in the same voice chat as the bot.")
+        return False
+    return True
+
+
+
+# Callback functions for answers
+
+
+async def search_callback(ctx, answer:str):
+    if not str.isdigit(answer):
+        await ctx.send("Searching can only be answered with (positive) numbers.")
+        return
+    selected = get_state(ctx).search_list[int(answer) - 1]
+    await ctx.send(f"Selected **{selected[1]}**.")
+    await play(ctx, selected[1])
+
+# Helper functions for commands
+async def get_stream_youtube(ctx, query):
+    queue = get_state(ctx).queue
+    stream, title = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, query)
+    await queue.put([stream, title])
+    return stream, title
+
+
+async def search_youtube(ctx, query, limit):
+    list = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, limit)
+    state = get_state(ctx)
+    state.search_list = list
+    return list
+
+
+
+# Util functions
+def is_url(string):
+    parsed = urlparse(string)
+    return all([parsed.scheme, parsed.netloc])
+
+
+
+# Running the bot
 key = os.getenv("DISCORD_KEY")
 bot.run(key)
