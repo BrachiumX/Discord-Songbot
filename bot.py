@@ -129,7 +129,7 @@ async def answer(ctx, *, answer:str):
     state = get_state(ctx)
     await state.question_callback(ctx, answer)
 
-@bot.command(aliases=['s'])
+@bot.command(aliases=['se'])
 async def search(ctx, *, query:str):
     if is_url(query):
         await ctx.send("You cannot search with urls.")
