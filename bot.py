@@ -164,7 +164,7 @@ def search_task(query, limit):
     }
     with yt_dlp.YoutubeDL(search) as track_search:
         result = track_search.extract_info(f"ytsearch:{query}", download=False)
-        limit = min(limit, result['entries'])
+        limit = min(limit, len(result['entries']))
         url = result['entries'][:limit]['url']
         title = result['entries'][:limit]['title']
         return zip(url, title)
