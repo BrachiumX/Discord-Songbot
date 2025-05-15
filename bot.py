@@ -20,7 +20,6 @@ class State:
         self.question = ""
         self.answer = ""
 
-
 process_pool = concurrent.futures.ProcessPoolExecutor()
 
 @bot.event
@@ -91,7 +90,7 @@ async def playmul(ctx, *, query:str):
 async def skip(ctx):
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
-        await ctx.send("Stopped playback.")
+        await ctx.send(f"Skipping **{get_state(ctx).currently_playing}**.")
 
 @bot.command(aliases=['q'])
 async def queue(ctx):
@@ -112,7 +111,7 @@ async def queue(ctx):
 
     await ctx.send(message)
 
-@bot.command()
+@bot.command(aliases=['h'])
 async def help(ctx):
     message = f"❓\n"
     message += f"**!queue** or **!q** to see queued songs\n"
@@ -123,7 +122,7 @@ async def help(ctx):
     message += f"**!join** or **!j** to have the bot join your current channel\n"
     message += f"**!leave** or **!l** to disconnect the bot from currently connected channel\n"
     await ctx.send(message)
-
+    
 def stream_task(query):
     search = {
     'extract_flat': True,
