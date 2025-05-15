@@ -29,7 +29,7 @@ async def on_ready():
 
 @bot.command(aliases=['j'])
 async def join(ctx):
-    if ctx.voice_client and ctx.voice_client.channel == ctx.author.voice.channel:
+    if check_same_voice(ctx):
         return
     guild = get_guild(ctx)
     wipe(guild)
@@ -41,6 +41,24 @@ async def join(ctx):
     asyncio.create_task(auto_disconnect_after_delay(ctx.guild.id))
     asyncio.create_task(player(ctx))
 
+async def get_or_join_voice(ctx):
+    if not ctx.author.voice:
+        await ctx.send("You need to be in a voice channel.")
+        return None
+        
+    if not check_same_voice(ctx):
+        await join(ctx)
+        return ctx.voice_client
+    
+def check_same_voice(ctx):
+    return ctx.author.voice and ctx.voice_client and ctx.voice_client.channel == ctx.author.voice.channel
+
+async def assert_same_voice(ctx):
+    if not check_same_voice(ctx):
+        ctx.send("You need to be in the same voice chat as the bot.")
+        return False
+    return True
+
 @bot.command(aliases=['l'])
 async def leave(ctx):
     wipe(ctx.guild.id)
@@ -49,6 +67,9 @@ async def leave(ctx):
 
 @bot.command(aliases=['c'])
 async def current(ctx):
+    if not assert_same_voice(ctx):
+        return
+    
     currently_playing = get_state(ctx).currently_playing
 
     if not ctx.voice_client or not ctx.voice_client.is_playing() or currently_playing == None:
@@ -58,15 +79,8 @@ async def current(ctx):
 
 @bot.command(aliases=['p'])
 async def play(ctx, *, query:str):
-    voice_client = ctx.voice_client
-
-    if not ctx.author.voice:
-        await ctx.send("You need to be in a voice channel.")
+    if get_or_join_voice(ctx) == None:
         return
-    
-    if not voice_client or voice_client.channel != ctx.author.voice.channel:
-        await join(ctx)
-        voice_client = ctx.voice_client
 
     stream, title = await get_stream_youtube(ctx, query)
     
@@ -74,27 +88,26 @@ async def play(ctx, *, query:str):
 
 @bot.command(aliases=['pm'])
 async def playmul(ctx, *, query:str):
-    voice_client = ctx.voice_client
-
-    if not ctx.author.voice:
-        await ctx.send("You need to be in a voice channel.")
+    if get_or_join_voice(ctx) == None:
         return
-    
-    if not voice_client or voice_client.channel != ctx.author.voice.channel:
-        await join(ctx)
-        voice_client = ctx.voice_client
+
     items = [item.strip() for item in query.split(",")]
     for item in items:
         asyncio.create_task(play(ctx, query=item))
 
 @bot.command(aliases=['s'])
 async def skip(ctx):
+    if not assert_same_voice(ctx):
+        return
+
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
         await ctx.send(f"Skipping **{get_state(ctx).currently_playing}**.")
 
 @bot.command(aliases=['q'])
 async def queue(ctx):
+    if not assert_same_voice(ctx):
+        return
     try:
         queue = get_state(ctx).queue
         items = list(queue._queue)
@@ -126,11 +139,14 @@ async def help(ctx):
     
 @bot.command(aliases=['a'])
 async def answer(ctx, *, answer:str):
+    if not assert_same_voice(ctx):
+        return
     state = get_state(ctx)
     await state.question_callback(ctx, answer)
 
 @bot.command(aliases=['se'])
 async def search(ctx, *, query:str):
+    get_or_join_voice(ctx)
     if is_url(query):
         await ctx.send("You cannot search with urls.")
         return
