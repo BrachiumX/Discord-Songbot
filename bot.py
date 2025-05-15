@@ -54,7 +54,7 @@ async def join(ctx):
 
     state_dict[guild] = State(guild_id=guild)
 
-    asyncio.create_task(auto_disconnect_after_delay(ctx.guild.id))
+    asyncio.create_task(auto_disconnect_after_delay(ctx))
     asyncio.create_task(player(ctx))
 
 
