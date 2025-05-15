@@ -8,7 +8,8 @@ import concurrent.futures
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="-", intents=intents, help_command=None)
+command_prefix = '-'
+bot = commands.Bot(command_prefix=command_prefix, intents=intents, help_command=None)
 
 state_dict = {}
 
@@ -17,8 +18,8 @@ class State:
         self.guild_id = guild_id
         self.queue = asyncio.Queue()
         self.currently_playing = ""
-        self.question = ""
-        self.answer = ""
+        self.question_callback = None
+        self.search_list = []
 
 process_pool = concurrent.futures.ProcessPoolExecutor()
 
@@ -114,15 +115,66 @@ async def queue(ctx):
 @bot.command(aliases=['h'])
 async def help(ctx):
     message = f"❓\n"
-    message += f"**!queue** or **!q** to see queued songs\n"
-    message += f"**!current** or **!c** to see the currently playing song\n"
-    message += f"**!play <track>** or **!p <track>** to play a song from youtube\n"
-    message += f"**!playmul <track>, <track>** or **!pm <track>, <track>** to play multiple songs from youtube\n"
-    message += f"**!skip** or **!s** to skip the currently playing song\n"
-    message += f"**!join** or **!j** to have the bot join your current channel\n"
-    message += f"**!leave** or **!l** to disconnect the bot from currently connected channel\n"
+    message += f"**{command_prefix}queue** or **{command_prefix}q** to see queued songs\n"
+    message += f"**{command_prefix}current** or **{command_prefix}c** to see the currently playing song\n"
+    message += f"**{command_prefix}play <track>** or **{command_prefix}p <track>** to play a song from youtube\n"
+    message += f"**{command_prefix}playmul <track>, <track>** or **{command_prefix}pm <track>, <track>** to play multiple songs from youtube\n"
+    message += f"**{command_prefix}skip** or **{command_prefix}s** to skip the currently playing song\n"
+    message += f"**{command_prefix}join** or **{command_prefix}j** to have the bot join your current channel\n"
+    message += f"**{command_prefix}leave** or **{command_prefix}l** to disconnect the bot from currently connected channel\n"
     await ctx.send(message)
     
+@bot.command(aliases=['a'])
+async def answer(ctx, *, answer:str):
+    state = get_state(ctx)
+    await state.question_callback(ctx, answer)
+
+@bot.command(aliases=['s'])
+async def search(ctx, *, query:str):
+    if is_url(query):
+        await ctx.send("You cannot search with urls.")
+        return
+    limit = 10
+    list = search_youtube(ctx, query, limit)
+    message = f"Search Results: \n"
+    if len(list):
+        await ctx.send("No results.")
+        return
+    for item in list:
+        message += f"1. **{item[1]}**\n"
+
+    message += f"\nWrite {command_prefix}answer <number> to select"
+    await ctx.send(message)
+    get_state(ctx).question_callback()   
+
+async def search_callback(ctx, answer:str):
+    if not str.isdigit(answer):
+        await ctx.send("Searching can only be answered with (positive) numbers.")
+        return
+    selected = get_state(ctx).search_list[int(answer) - 1]
+    await ctx.send(f"Selected **{selected[1]}**.")
+    await play(ctx, selected[1])
+
+def search_task(query, limit):
+    search = {
+    'extract_flat': True,
+    'skip_download': True,
+    'quiet': True,
+    'noplaylist': True,
+    }
+    with yt_dlp.YoutubeDL(search) as track_search:
+        result = track_search.extract_info(f"ytsearch:{query}", download=False)
+        limit = min(limit, result['entries'])
+        url = result['entries'][:limit]['url']
+        title = result['entries'][:limit]['title']
+        return zip(url, title)
+    
+async def search_youtube(ctx, query, limit):
+    list = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, limit)
+    state = get_state(ctx)
+    state.search_list = list
+    return list
+
 def stream_task(query):
     search = {
     'extract_flat': True,
