@@ -1,12 +1,9 @@
 import discord
 from discord.ext import commands
 import asyncio
-import subprocess
 import os
 import yt_dlp
-import shutil
 from urllib.parse import urlparse
-import fcntl
 import concurrent.futures
 
 intents = discord.Intents.default()
