@@ -8,7 +8,7 @@ import concurrent.futures
 
 
 
-#Setup
+# Setup
 
 
 intents = discord.Intents.default()
@@ -18,7 +18,7 @@ bot = commands.Bot(command_prefix=command_prefix, intents=intents, help_command=
 
 
 
-#Main stateholding object and class for guilds
+# Main stateholding object and class for guilds
 
 
 state_dict = {}
@@ -35,7 +35,7 @@ process_pool = concurrent.futures.ProcessPoolExecutor()
 
 
 
-##Commands
+# Commands
 
 
 @bot.event
@@ -226,7 +226,7 @@ def stream_task(query):
 
 
 
-#B ackground tasks
+# Background tasks
 
 
 async def auto_disconnect_after_delay(ctx, delay=240):
