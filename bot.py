@@ -41,7 +41,7 @@ async def leave(ctx):
     if ctx.voice_client:
         await ctx.voice_client.disconnect()
 
-@bot.command()
+@bot.command(aliases=['p'])
 async def play(ctx, *, query:str):
     voice_client = ctx.voice_client
 
@@ -57,11 +57,49 @@ async def play(ctx, *, query:str):
     
     await ctx.send(f"Added to the list: {title}")
 
+@bot.command(aliases=['pm'])
+async def playmul(ctx, *, query:str):
+    voice_client = ctx.voice_client
+
+    if not ctx.author.voice:
+        await ctx.send("You need to be in a voice channel.")
+        return
+    
+    if not voice_client or voice_client.channel != ctx.author.voice.channel:
+        await join(ctx)
+        voice_client = ctx.voice_client
+    items = [item.strip() for item in query.split(",")]
+    for item in items:
+        asyncio.create_task(play(ctx, query=item))
+
 @bot.command()
 async def skip(ctx):
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
         await ctx.send("Stopped playback.")
+
+@bot.command()
+async def queue(ctx):
+    try:
+        queue = queue_dict[str(ctx.guild.id)]
+        items = list(queue._queue)
+    except:
+        await ctx.send("Queue not found.")
+        return
+    count = 0
+    message = f"\nSong Queue:\n"
+    for i in items:
+        message += f"{count}. {i[1]}\n"
+
+    await ctx.send(message)
+
+@bot.command()
+async def help(ctx):
+    message = f"\n!queue to see queued songs\n"
+    message += f"!play <track> or !p <track> to play a song from youtube\n"
+    message += f"!playmul <track>, <track> or !pm <track>, <track> to play multiple songs from youtube\n"
+    message += f"!join to have the bot join your current channel\n"
+    message += f"!leave to disconnect the bot from currently connected channel\n"
 
 def stream_task(query):
     search = {
