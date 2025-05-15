@@ -163,10 +163,12 @@ def search_task(query, limit):
     'noplaylist': True,
     }
     with yt_dlp.YoutubeDL(search) as track_search:
-        result = track_search.extract_info(f"ytsearch:{query}", download=False)
-        limit = min(limit, len(result['entries']))
-        url = result['entries'][:limit]['url']
-        title = result['entries'][:limit]['title']
+        result = track_search.extract_info(f"ytsearch:{query}", download=False)['entries']
+        limit = min(limit, len(result))
+        url, title = [], []
+        for i in range(limit):
+            url[i] = result[i]['url']
+            title[i] = result[i]['title']
         return zip(url, title)
     
 async def search_youtube(ctx, query, limit):
