@@ -135,7 +135,7 @@ async def search(ctx, *, query:str):
         await ctx.send("You cannot search with urls.")
         return
     limit = 10
-    list = search_youtube(ctx, query, limit)
+    list = await search_youtube(ctx, query, limit)
     message = f"Search Results: \n"
     if len(list):
         await ctx.send("No results.")
