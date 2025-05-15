@@ -167,8 +167,8 @@ def search_task(query, limit):
         limit = min(limit, len(result))
         url, title = [], []
         for i in range(limit):
-            url[i] = result[i]['url']
-            title[i] = result[i]['title']
+            url.append(result[i]['url'])
+            title.append(result[i]['title'])
         return zip(url, title)
     
 async def search_youtube(ctx, query, limit):
