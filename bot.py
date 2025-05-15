@@ -11,9 +11,10 @@ import concurrent.futures
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 queue_dict = {}
+currently_playing = {}
 
 process_pool = concurrent.futures.ProcessPoolExecutor()
 
@@ -21,7 +22,7 @@ process_pool = concurrent.futures.ProcessPoolExecutor()
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
 
-@bot.command()
+@bot.command(aliases=['j'])
 async def join(ctx):
     if ctx.voice_client and ctx.voice_client.channel == ctx.author.voice.channel:
         return
@@ -31,15 +32,22 @@ async def join(ctx):
 
     queue = asyncio.Queue()
     queue_dict[str(ctx.guild.id)] = queue
+    currently_playing[str(ctx.guild.id)] = ""
 
     asyncio.create_task(auto_disconnect_after_delay(ctx.guild.id))
     asyncio.create_task(player(ctx))
 
-@bot.command()
+@bot.command(aliases=['l'])
 async def leave(ctx):
     wipe(ctx.guild.id)
     if ctx.voice_client:
         await ctx.voice_client.disconnect()
+
+@bot.command(aliases=['c'])
+async def current(ctx):
+    if not ctx.voice_client or not ctx.voice_client.is_playing():
+        await ctx.send(f"Currently not playing a song.")
+    await ctx.send(f"Currently playing: **{currently_playing[str(ctx.guild.id)]}**")
 
 @bot.command(aliases=['p'])
 async def play(ctx, *, query:str):
@@ -55,7 +63,7 @@ async def play(ctx, *, query:str):
 
     stream, title = await get_stream_youtube(ctx.guild.id, query)
     
-    await ctx.send(f"Added to the list: {title}")
+    await ctx.send(f"Added to the list: **{title}**")
 
 @bot.command(aliases=['pm'])
 async def playmul(ctx, *, query:str):
@@ -72,13 +80,13 @@ async def playmul(ctx, *, query:str):
     for item in items:
         asyncio.create_task(play(ctx, query=item))
 
-@bot.command()
+@bot.command(aliases=['s'])
 async def skip(ctx):
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
         await ctx.send("Stopped playback.")
 
-@bot.command()
+@bot.command(aliases=['q'])
 async def queue(ctx):
     try:
         queue = queue_dict[str(ctx.guild.id)]
@@ -87,19 +95,24 @@ async def queue(ctx):
         await ctx.send("Queue not found.")
         return
     count = 0
-    message = f"\nSong Queue:\n"
+    message = f"📋\n"
+    message += f"Song Queue:\n"
     for i in items:
-        message += f"{count}. {i[1]}\n"
+        message += f"{count}. **{i[1]}**\n"
 
     await ctx.send(message)
 
 @bot.command()
 async def help(ctx):
-    message = f"\n!queue to see queued songs\n"
-    message += f"!play <track> or !p <track> to play a song from youtube\n"
-    message += f"!playmul <track>, <track> or !pm <track>, <track> to play multiple songs from youtube\n"
-    message += f"!join to have the bot join your current channel\n"
-    message += f"!leave to disconnect the bot from currently connected channel\n"
+    message = f"❓\n"
+    message += f"**!queue** or **!q** to see queued songs\n"
+    message += f"**!current** or **!c** to see the currently playing song\n"
+    message += f"**!play <track>** or **!p <track>** to play a song from youtube\n"
+    message += f"**!playmul <track>, <track>** or **!pm <track>, <track>** to play multiple songs from youtube\n"
+    message += f"**!skip** or **!s** to skip the currently playing song\n"
+    message += f"**!join** or **!j** to have the bot join your current channel\n"
+    message += f"**!leave** or **!l** to disconnect the bot from currently connected channel\n"
+    await ctx.send(message)
 
 def stream_task(query):
     search = {
@@ -163,7 +176,8 @@ async def player(ctx):
         }
         audio = discord.FFmpegPCMAudio(stream, **ffmpeg_options)
         vc.play(audio)
-        await ctx.send(f"Now playing: {title}")
+        await ctx.send(f"Now playing: **{title}**")
+        currently_playing[str(ctx.guild.id)] = title
         while vc.is_playing():
             await asyncio.sleep(1)
 
