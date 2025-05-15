@@ -13,8 +13,16 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-queue_dict = {}
-currently_playing = {}
+state_dict = {}
+
+class State:
+    def __init__(self, guild_id):
+        self.guild_id = guild_id
+        self.queue = asyncio.Queue()
+        self.currently_playing = ""
+        self.question = ""
+        self.answer = ""
+
 
 process_pool = concurrent.futures.ProcessPoolExecutor()
 
@@ -26,13 +34,12 @@ async def on_ready():
 async def join(ctx):
     if ctx.voice_client and ctx.voice_client.channel == ctx.author.voice.channel:
         return
-    wipe(ctx.guild.id)
+    guild = get_guild(ctx)
+    wipe(guild)
     channel = ctx.author.voice.channel
     await channel.connect()
 
-    queue = asyncio.Queue()
-    queue_dict[str(ctx.guild.id)] = queue
-    currently_playing[str(ctx.guild.id)] = ""
+    state_dict[guild] = State(guild_id=guild)
 
     asyncio.create_task(auto_disconnect_after_delay(ctx.guild.id))
     asyncio.create_task(player(ctx))
@@ -45,10 +52,12 @@ async def leave(ctx):
 
 @bot.command(aliases=['c'])
 async def current(ctx):
-    if not ctx.voice_client or not ctx.voice_client.is_playing() or currently_playing[str(ctx.guild.id)] == None:
+    currently_playing = get_state(ctx).currently_playing
+
+    if not ctx.voice_client or not ctx.voice_client.is_playing() or currently_playing == None:
         await ctx.send(f"Currently not playing a song.")
         return
-    await ctx.send(f"Currently playing: **{currently_playing[str(ctx.guild.id)]}**")
+    await ctx.send(f"Currently playing: **{currently_playing}**")
 
 @bot.command(aliases=['p'])
 async def play(ctx, *, query:str):
@@ -62,7 +71,7 @@ async def play(ctx, *, query:str):
         await join(ctx)
         voice_client = ctx.voice_client
 
-    stream, title = await get_stream_youtube(ctx.guild.id, query)
+    stream, title = await get_stream_youtube(ctx, query)
     
     await ctx.send(f"Added to the list: **{title}**")
 
@@ -90,7 +99,7 @@ async def skip(ctx):
 @bot.command(aliases=['q'])
 async def queue(ctx):
     try:
-        queue = queue_dict[str(ctx.guild.id)]
+        queue = get_state(ctx).queue
         items = list(queue._queue)
     except:
         await ctx.send("Queue not found.")
@@ -149,31 +158,33 @@ def stream_task(query):
         
         return stream_url, title
 
-async def get_stream_youtube(guild_id, query):
-    queue = queue_dict[str(guild_id)]
+async def get_stream_youtube(ctx, query):
+    queue = get_state(ctx).queue
     stream, title = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, query)
     await queue.put([stream, title])
     return stream, title
 
-async def auto_disconnect_after_delay(guild_id, delay=240):
+async def auto_disconnect_after_delay(ctx, delay=240):
     while True:
         await asyncio.sleep(delay)
-        vc = discord.utils.get(bot.voice_clients, guild__id=guild_id)
+        vc = discord.utils.get(bot.voice_clients, guild__id=ctx.guild.id)
+        guild = get_guild(ctx)
         if not vc:
             return
         if vc and not vc.is_playing():
             await asyncio.sleep(2)
             if vc and not vc.is_playing():
                 await vc.disconnect()
-                wipe(guild_id)
-                print(f"Disconnected from voice in guild {guild_id}")
+                wipe(guild)
+                print(f"Disconnected from voice in guild {guild}")
+                await ctx.send(f"Disconnected from the channel due to inactivity.")
 
 async def player(ctx):
     vc = discord.utils.get(bot.voice_clients, guild__id=ctx.guild.id)
-    queue = queue_dict[str(ctx.guild.id)]
+    state = get_state(ctx)
+    queue = state.queue
     while True:
         [stream, title] = await queue.get()
-
         ffmpeg_options = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn -bufsize 1M -rw_timeout 15000000',
@@ -181,7 +192,7 @@ async def player(ctx):
         audio = discord.FFmpegPCMAudio(stream, **ffmpeg_options)
         vc.play(audio)
         await ctx.send(f"Now playing: **{title}**")
-        currently_playing[str(ctx.guild.id)] = title
+        state.currently_playing = title
         while vc.is_playing():
             await asyncio.sleep(1)
 
@@ -192,11 +203,17 @@ async def player(ctx):
             return
 
 def wipe(guild_id):
-    queue_dict[str(guild_id)] = None
+    state_dict[guild_id] = None
 
 def is_url(string):
     parsed = urlparse(string)
     return all([parsed.scheme, parsed.netloc])
+
+def get_state(ctx):
+    return state_dict[get_guild(ctx)]
+
+def get_guild(ctx):
+    return str(ctx.guild.id)
 
 key = os.getenv("DISCORD_KEY")
 bot.run(key)
