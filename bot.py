@@ -45,8 +45,9 @@ async def leave(ctx):
 
 @bot.command(aliases=['c'])
 async def current(ctx):
-    if not ctx.voice_client or not ctx.voice_client.is_playing():
+    if not ctx.voice_client or not ctx.voice_client.is_playing() or currently_playing[str(ctx.guild.id)] == None:
         await ctx.send(f"Currently not playing a song.")
+        return
     await ctx.send(f"Currently playing: **{currently_playing[str(ctx.guild.id)]}**")
 
 @bot.command(aliases=['p'])
@@ -97,6 +98,9 @@ async def queue(ctx):
     count = 0
     message = f"📋\n"
     message += f"Song Queue:\n"
+    if len(items) == 0:
+        await ctx.send(f"Song queue is empty.")
+        return
     for i in items:
         message += f"{count}. **{i[1]}**\n"
 
