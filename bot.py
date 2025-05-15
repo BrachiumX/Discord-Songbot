@@ -64,21 +64,31 @@ async def skip(ctx):
         await ctx.send("Stopped playback.")
 
 def stream_task(query):
-    ydl_opts = {
+    search = {
+    'extract_flat': True,
+    'skip_download': True,
+    'quiet': True,
+    'noplaylist': True,
+    }
+    stream = {
+    'extract_flat': False,
+    'skip_download': True,
     'quiet': True,
     'noplaylist': True,
     'format': 'bestaudio/best',
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    
+    with yt_dlp.YoutubeDL(stream) as stream_search:
         url = query
         if not is_url(query):
-            result = ydl.extract_info(f"ytsearch:{query}", download=False)
+            with yt_dlp.YoutubeDL(search) as track_search:
+                result = track_search.extract_info(f"ytsearch:{query}", download=False)
             url = result['entries'][0]['url']
             title = result['entries'][0]['title']
-            info = ydl.extract_info(url, download=False)
+            info = stream_search.extract_info(url, download=False)
             stream_url = info['url']
         else:
-            info = ydl.extract_info(url, download=False)
+            info = stream_search.extract_info(url, download=False)
             title = info['title']
             stream_url = info['url']
         
