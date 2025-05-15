@@ -46,6 +46,7 @@ async def on_ready():
 async def join(ctx):
     if check_same_voice(ctx):
         return
+
     guild = get_guild(ctx)
     wipe(guild)
     channel = ctx.author.voice.channel
@@ -66,7 +67,8 @@ async def leave(ctx):
 
 @bot.command(aliases=['c'])
 async def current(ctx):
-    if not assert_same_voice(ctx):
+    result = await assert_same_voice(ctx)
+    if not result:
         return
     
     currently_playing = get_state(ctx).currently_playing
@@ -79,7 +81,8 @@ async def current(ctx):
 
 @bot.command(aliases=['p'])
 async def play(ctx, *, query:str):
-    if get_or_join_voice(ctx) == None:
+    result = await get_or_join_voice(ctx)
+    if result == None:
         return
 
     stream, title = await get_stream_youtube(ctx, query)
@@ -89,17 +92,18 @@ async def play(ctx, *, query:str):
 
 @bot.command(aliases=['pm'])
 async def playmul(ctx, *, query:str):
-    if get_or_join_voice(ctx) == None:
+    result = await get_or_join_voice(ctx)
+    if result == None:
         return
 
     items = [item.strip() for item in query.split(",")]
     for item in items:
-        asyncio.create_task(play(ctx, query=item))
+        asyncio.create_task(play_internal(ctx, item))
 
 
 @bot.command(aliases=['s'])
 async def skip(ctx):
-    if not assert_same_voice(ctx):
+    if check_same_voice(ctx):
         return
 
     if ctx.voice_client and ctx.voice_client.is_playing():
@@ -109,8 +113,10 @@ async def skip(ctx):
 
 @bot.command(aliases=['q'])
 async def queue(ctx):
-    if not assert_same_voice(ctx):
+    result = await assert_same_voice(ctx)
+    if not result:
         return
+
     try:
         queue = get_state(ctx).queue
         items = list(queue._queue)
@@ -144,31 +150,35 @@ async def help(ctx):
 
 @bot.command(aliases=['a'])
 async def answer(ctx, *, answer:str):
-    if not assert_same_voice(ctx):
+    result = await assert_same_voice(ctx)
+    if not result:
         return
+
     state = get_state(ctx)
     await state.question_callback(ctx, answer)
 
 
 @bot.command(aliases=['se'])
 async def search(ctx, *, query:str):
-    if not get_or_join_voice(ctx):
+    result = await get_or_join_voice(ctx)
+    if result == None:
         return
+
     if is_url(query):
         await ctx.send("You cannot search with urls.")
         return
     limit = 10
-    list = await search_youtube(ctx, query, limit)
+    result_list = await search_youtube(ctx, query, limit)
     message = f"Search Results: \n"
-    if len(list):
+    if len(result_list) == 0:
         await ctx.send("No results.")
         return
-    for item in list:
+    for item in result_list:
         message += f"1. **{item[1]}**\n"
 
-    message += f"\nWrite {command_prefix}answer <number> to select"
+    message += f"\nWrite {command_prefix}**answer <number>** to select"
     await ctx.send(message)
-    get_state(ctx).question_callback()   
+    get_state(ctx).question_callback = search_callback   
 
 
 
@@ -183,15 +193,14 @@ def search_task(query, limit):
     'noplaylist': True,
     }
     with yt_dlp.YoutubeDL(search) as track_search:
-        result = track_search.extract_info(f"ytsearch:{query}", download=False)['entries']
+        result = track_search.extract_info(f"ytsearch{limit}:{query}", download=False)['entries']
         limit = min(limit, len(result))
         url, title = [], []
         for i in range(limit):
             url.append(result[i]['url'])
             title.append(result[i]['title'])
-        return zip(url, title)
+        return list(zip(url, title))
     
-
 
 def stream_task(query):
     search = {
@@ -274,7 +283,7 @@ async def player(ctx):
 
 
 def wipe(guild_id):
-    if state_dict[guild_id] != None:
+    if state_dict.get(guild_id) != None:
         state_dict[guild_id] = None
 
 
@@ -306,7 +315,7 @@ def check_same_voice(ctx):
 
 async def assert_same_voice(ctx):
     if not check_same_voice(ctx):
-        ctx.send("You need to be in the same voice chat as the bot.")
+        await ctx.send("You need to be in the same voice chat as the bot.")
         return False
     return True
 
@@ -321,9 +330,11 @@ async def search_callback(ctx, answer:str):
         return
     selected = get_state(ctx).search_list[int(answer) - 1]
     await ctx.send(f"Selected **{selected[1]}**.")
-    await play(ctx, selected[1])
+    await play_internal(ctx, selected[0])
 
 # Helper functions for commands
+
+
 async def get_stream_youtube(ctx, query):
     queue = get_state(ctx).queue
     stream, title = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, query)
@@ -332,10 +343,10 @@ async def get_stream_youtube(ctx, query):
 
 
 async def search_youtube(ctx, query, limit):
-    list = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, limit)
+    result_list = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, limit)
     state = get_state(ctx)
-    state.search_list = list
-    return list
+    state.search_list = result_list
+    return result_list
 
 
 
@@ -345,6 +356,13 @@ def is_url(string):
     return all([parsed.scheme, parsed.netloc])
 
 
+
+# Internal versions of command funcions
+
+async def play_internal(ctx, query):
+    stream, title = await get_stream_youtube(ctx, query)
+    
+    await ctx.send(f"Added to the list: **{title}**")
 
 # Running the bot
 key = os.getenv("DISCORD_KEY")
