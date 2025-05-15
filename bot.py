@@ -146,7 +146,8 @@ async def answer(ctx, *, answer:str):
 
 @bot.command(aliases=['se'])
 async def search(ctx, *, query:str):
-    get_or_join_voice(ctx)
+    if not get_or_join_voice(ctx):
+        return
     if is_url(query):
         await ctx.send("You cannot search with urls.")
         return
@@ -269,7 +270,8 @@ async def player(ctx):
             return
 
 def wipe(guild_id):
-    state_dict[guild_id] = None
+    if state_dict[guild_id] != None:
+        state_dict[guild_id] = None
 
 def is_url(string):
     parsed = urlparse(string)
