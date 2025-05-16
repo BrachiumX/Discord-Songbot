@@ -160,6 +160,11 @@ async def answer(ctx, *, answer:str):
 
 @bot.command(aliases=['se'])
 async def search(ctx, *, query:str):
+    result = await check_if_question(ctx)
+    if result:
+        return
+
+    get_state(ctx).question_callback = search_callback   
     result = await get_or_join_voice(ctx)
     if result == None:
         return
@@ -178,8 +183,15 @@ async def search(ctx, *, query:str):
 
     message += f"\nWrite {command_prefix}**answer <number>** to select"
     await ctx.send(message)
-    get_state(ctx).question_callback = search_callback   
 
+
+@bot.command
+async def cancel(ctx):
+    result = await assert_same_voice(ctx)
+    if not result:
+        return
+
+    get_state(ctx).question_callback = None
 
 
 # Tasks to be run by executor
@@ -296,7 +308,7 @@ def get_guild(ctx):
 
 
 
-# Voice chat related helper functions
+# Checking related helper functions
 
 
 async def get_or_join_voice(ctx):
@@ -320,6 +332,10 @@ async def assert_same_voice(ctx):
     return True
 
 
+async def check_if_question(ctx):
+    return get_state(ctx).question_callback == None
+
+
 
 # Callback functions for answers
 
@@ -331,6 +347,7 @@ async def search_callback(ctx, answer:str):
     selected = get_state(ctx).search_list[int(answer) - 1]
     await ctx.send(f"Selected **{selected[1]}**.")
     await play_internal(ctx, selected[0])
+    get_state(ctx).question_callback = None
 
 # Helper functions for commands
 
