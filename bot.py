@@ -42,6 +42,7 @@ process_pool = concurrent.futures.ProcessPoolExecutor()
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
 
+
 @bot.command(aliases=['j'])
 async def join(ctx):
     if check_same_voice(ctx):
@@ -56,6 +57,7 @@ async def join(ctx):
 
     asyncio.create_task(auto_disconnect_after_delay(ctx))
     asyncio.create_task(player(ctx))
+    print(f"Joined channel in {get_guild(ctx)}\n")
 
 
 @bot.command(aliases=['l'])
@@ -63,6 +65,7 @@ async def leave(ctx):
     wipe(ctx.guild.id)
     if ctx.voice_client:
         await ctx.voice_client.disconnect()
+        print(f"Left channel in {get_guild(ctx)}\n")
 
 
 @bot.command(aliases=['c'])
@@ -87,6 +90,7 @@ async def play(ctx, *, query:str):
 
     stream, title = await get_stream_youtube(ctx, query)
     
+    print(f"Done processing song {title} in {get_guild(ctx)}")
     await ctx.send(f"Added to the list: **{title}**")
 
 
@@ -182,6 +186,7 @@ async def search(ctx, *, query:str):
         message += f"1. **{item[1]}**\n"
 
     message += f"\nWrite {command_prefix}**answer <number>** to select"
+    message += f"\nWrite {command_prefix}**cancel** to cancel"
     await ctx.send(message)
 
 
@@ -191,6 +196,7 @@ async def cancel(ctx):
     if not result:
         return
 
+    print(f"Canceled question in guild {get_guild(ctx)}.\n")
     get_state(ctx).question_callback = None
 
 
@@ -208,9 +214,13 @@ def search_task(query, limit):
         result = track_search.extract_info(f"ytsearch{limit}:{query}", download=False)['entries']
         limit = min(limit, len(result))
         url, title = [], []
+        debug_message = f"Got these results for stream tasks for this query {query}.\n"
         for i in range(limit):
             url.append(result[i]['url'])
             title.append(result[i]['title'])
+            debug_message += f"1. Url: {result[i]['url']}, Title: {result[i]['title']}\n"
+
+        print(debug_message)
         return list(zip(url, title))
     
 
@@ -243,6 +253,7 @@ def stream_task(query):
             title = info['title']
             stream_url = info['url']
         
+        print(f"Got result {stream_url}, {title} for the query {query} in stream task.\n")
         return stream_url, title
 
 
@@ -251,6 +262,7 @@ def stream_task(query):
 
 
 async def auto_disconnect_after_delay(ctx, delay=240):
+    print(f"Auto disconnect task is initialized in {get_guild(ctx)}.\n")
     while True:
         await asyncio.sleep(delay)
         vc = discord.utils.get(bot.voice_clients, guild__id=ctx.guild.id)
@@ -262,7 +274,7 @@ async def auto_disconnect_after_delay(ctx, delay=240):
             if vc and not vc.is_playing():
                 await vc.disconnect()
                 wipe(guild)
-                print(f"Disconnected from voice in guild {guild}")
+                print(f"Disconnected from voice in guild {guild}.\n")
                 await ctx.send(f"Disconnected from the channel due to inactivity.")
 
 
@@ -270,6 +282,7 @@ async def player(ctx):
     vc = discord.utils.get(bot.voice_clients, guild__id=ctx.guild.id)
     state = get_state(ctx)
     queue = state.queue
+    print(f"Player task is initialized in guild {get_guild(ctx)}.\n")
     while True:
         [stream, title] = await queue.get()
         ffmpeg_options = {
@@ -278,6 +291,7 @@ async def player(ctx):
         }
         audio = discord.FFmpegPCMAudio(stream, **ffmpeg_options)
         vc.play(audio)
+        print(f"Now playing: {title} in guild {get_guild(ctx)}.\n")
         await ctx.send(f"Now playing: **{title}**")
         state.currently_playing = title
         while vc.is_playing():
@@ -345,6 +359,7 @@ async def search_callback(ctx, answer:str):
         await ctx.send("Searching can only be answered with (positive) numbers.")
         return
     selected = get_state(ctx).search_list[int(answer) - 1]
+    print(f"Search callback function is called in guild {get_guild(ctx)}.\n")
     await ctx.send(f"Selected **{selected[1]}**.")
     await play_internal(ctx, selected[0])
     get_state(ctx).question_callback = None
@@ -382,6 +397,7 @@ def is_url(string):
 async def play_internal(ctx, query):
     stream, title = await get_stream_youtube(ctx, query)
     
+    print(f"Done processing song {title} in guild {get_guild(ctx)}.\n")
     await ctx.send(f"Added to the list: **{title}**")
 
 
