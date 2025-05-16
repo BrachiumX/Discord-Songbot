@@ -368,6 +368,8 @@ async def search_youtube(ctx, query, limit):
 
 
 # Util functions
+
+
 def is_url(string):
     parsed = urlparse(string)
     return all([parsed.scheme, parsed.netloc])
@@ -376,11 +378,16 @@ def is_url(string):
 
 # Internal versions of command funcions
 
+
 async def play_internal(ctx, query):
     stream, title = await get_stream_youtube(ctx, query)
     
     await ctx.send(f"Added to the list: **{title}**")
 
+
+
 # Running the bot
+
+
 key = os.getenv("DISCORD_KEY")
 bot.run(key)
