@@ -41,3 +41,7 @@ You can find how to do these steps in Discord's own website.
 ## Commands
 
 You can write -h to see the commands in your server.
+
+## Disclaimer
+
+Youtube doesn't really enjoy people using their website for purposes like these. So use it at your own risk.
