@@ -2,10 +2,9 @@ import discord
 from discord.ext import commands
 import asyncio
 import os
-import yt_dlp
-from urllib.parse import urlparse
 import concurrent.futures
-
+import tasks
+import utils
 
 
 # Setup
@@ -30,6 +29,7 @@ class State:
         self.currently_playing = ""
         self.question_callback = None
         self.search_list = []
+        self.is_processing = utils.AsyncSafeInt()
 
 process_pool = concurrent.futures.ProcessPoolExecutor()
 
@@ -45,19 +45,23 @@ async def on_ready():
 
 @bot.command(aliases=['j'])
 async def join(ctx):
-    if check_same_voice(ctx):
+    if in_same_vc(ctx):
         return
 
     guild = get_guild(ctx)
     wipe(guild)
     channel = ctx.author.voice.channel
-    await channel.connect()
-
     state_dict[guild] = State(guild_id=guild)
+
+    is_processing = get_state(ctx).is_processing
+    await is_processing.increment()
+
+    await channel.connect()
 
     asyncio.create_task(auto_disconnect_after_delay(ctx))
     asyncio.create_task(player(ctx))
     print(f"Joined channel in guild {get_guild(ctx)}.")
+    await is_processing.decrement()
 
 
 @bot.command(aliases=['l'])
@@ -97,9 +101,12 @@ async def play(ctx, *, query:str=""):
     result = await get_or_join_voice(ctx)
     if result == None:
         return
+    
+    is_processing = get_state(ctx).is_processing
+    await is_processing.increment()
 
     for item in items:
-        if is_url(item) and get_link_type(item) == "list":
+        if utils.is_url(item) and utils.get_link_type(item) == "list":
             playlist = await get_playlist(item)
             await ctx.send(f"Adding requested playlist {item}")
             for i in playlist:
@@ -107,10 +114,12 @@ async def play(ctx, *, query:str=""):
         else:
             asyncio.create_task(play_internal(ctx, item))
 
+    await is_processing.decrement()
+
 
 @bot.command(aliases=['s'])
 async def skip(ctx):
-    if not check_same_voice(ctx):
+    if not in_same_vc(ctx):
         return
 
     if ctx.voice_client and ctx.voice_client.is_playing():
@@ -148,6 +157,7 @@ async def help(ctx):
     message += f"**{command_prefix}queue** or **{command_prefix}q** to see queued songs\n"
     message += f"**{command_prefix}current** or **{command_prefix}c** to see the currently playing song\n"
     message += f"**{command_prefix}play <track>** or **{command_prefix}p <track>** to play a song from youtube\n"
+    message += f"**{command_prefix}play <track>, <track>** or **{command_prefix}p <track>, <track>** to play multiple songs\n"
     message += f"**{command_prefix}skip** or **{command_prefix}s** to skip the currently playing song\n"
     message += f"**{command_prefix}join** or **{command_prefix}j** to have the bot join your current channel\n"
     message += f"**{command_prefix}leave** or **{command_prefix}l** to disconnect the bot from currently connected channel\n"
@@ -161,8 +171,12 @@ async def answer(ctx, *, answer:str):
     if not result:
         return
 
+    is_processing = get_state(ctx).is_processing
+    await is_processing.increment()
+
     state = get_state(ctx)
     await state.question_callback(ctx, answer)
+    await is_processing.decrement()
 
 
 @bot.command(aliases=['se'])
@@ -171,17 +185,16 @@ async def search(ctx, *, query:str=""):
         await ctx.send(f"Please enter a track after the command.")
         return
 
-    result = await check_if_question(ctx)
-    if result:
-        return
-
     result = await get_or_join_voice(ctx)
     if result == None:
         return
 
-    if is_url(query):
+    if utils.is_url(query):
         await ctx.send("You cannot search with urls.")
         return
+
+    is_processing = get_state(ctx).is_processing
+    await is_processing.increment()
 
     get_state(ctx).question_callback = search_callback
     limit = 10
@@ -190,80 +203,17 @@ async def search(ctx, *, query:str=""):
     
     if len(result_list) == 0:
         await ctx.send("No results.")
+        await is_processing.decrement()
         return
     for i, item in enumerate(result_list):
         message += f"{i}. **{item[1]}**"
-        if get_link_type(item[0]) == 'playlist':
+        if utils.get_link_type(item[0]) == 'playlist':
             message += f" (This is a playlist.)"
         message += "\n"
     message += f"\nWrite {command_prefix}**answer <number>** to select"
     print(f"Completed search for query {query} in guild {get_guild(ctx)}")
     await ctx.send(message)
-
-
-
-# Tasks to be run by executor
-
-
-def search_task(query, limit, noplaylist=True):
-    search = {
-    'extract_flat': True,
-    'skip_download': True,
-    'quiet': True,
-    'noplaylist': noplaylist,
-    }
-    with yt_dlp.YoutubeDL(search) as track_search:
-        result = track_search.extract_info(f"ytsearch{limit}:{query}", download=False)['entries']
-        limit = min(limit, len(result))
-        url, title = [], []
-        debug_message = f"Got these results for search tasks for the query {query}.\n"
-        for i in range(limit):
-            if get_link_type(result[i]['url']) not in ["video", "playlist"]:
-                continue
-            url.append(result[i]['url'])
-            title.append(result[i]['title'])
-            debug_message += f"{i + 1}. Url: {result[i]['url']}, Title: {result[i]['title']}.\n"
-
-        print(debug_message)
-        return list(zip(url, title))
-
-def playlist_task(query):
-    search = {
-    'extract_flat': True,
-    'skip_download': True,
-    'quiet': True,
-    }
-    with yt_dlp.YoutubeDL(search) as track_search:
-        result = track_search.extract_info(query, download=False)['entries']
-        url, title = [], []
-        debug_message = f"Got these results for search tasks for the query {query}.\n"
-        for i in range(len(result)):
-            if get_link_type(result[i]['url']) not in ["video"]:
-                continue
-            url.append(result[i]['url'])
-            title.append(result[i]['title'])
-            debug_message += f"{i + 1}. Url: {result[i]['url']}, Title: {result[i]['title']}.\n"
-
-        print(debug_message)
-        return list(zip(url, title))
-    
-
-def stream_task(query):
-    stream = {
-    'extract_flat': False,
-    'skip_download': True,
-    'quiet': True,
-    'noplaylist': True,
-    'format': 'bestaudio/best',
-    }
-    
-    with yt_dlp.YoutubeDL(stream) as stream_search:
-        info = stream_search.extract_info(query, download=False)
-        title = info['title']
-        stream_url = info['url']
-        
-        print(f"Got result {stream_url}, {title} for the query {query} in stream task.")
-        return stream_url, title
+    await is_processing.decrement()
 
 
 
@@ -278,12 +228,15 @@ async def auto_disconnect_after_delay(ctx, delay=240):
         guild = get_guild(ctx)
         if not vc:
             return
-        if vc and not vc.is_playing():
+        processing = await is_processing(ctx)
+        if vc and (not vc.is_playing() or vc_is_empty(vc)) and not processing:
             await asyncio.sleep(2)
-            if vc and not vc.is_playing():
+            processing = await is_processing(ctx)
+            if vc and (not vc.is_playing() or vc_is_empty(vc)) and not processing:
                 await vc.disconnect()
                 wipe(guild)
                 print(f"Disconnected from voice in guild {guild}.")
+                print(f"[AUTO_DISCONNECT] Playing: {vc.is_playing()}, Empty: {vc_is_empty(vc)}, Processing: {processing}")
                 await ctx.send(f"Disconnected from the channel due to inactivity.")
 
 
@@ -294,6 +247,10 @@ async def player(ctx):
     print(f"Player task is initialized in guild {get_guild(ctx)}.")
     while True:
         [stream, title] = await queue.get()
+        
+        is_processing = get_state(ctx).is_processing
+        await is_processing.increment()
+
         ffmpeg_options = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn -bufsize 1M -rw_timeout 15000000',
@@ -306,6 +263,8 @@ async def player(ctx):
         while vc.is_playing():
             await asyncio.sleep(1)
 
+
+        await is_processing.decrement()
         stream = ""
 
         vc = discord.utils.get(bot.voice_clients, guild__id=ctx.guild.id)
@@ -330,6 +289,13 @@ def get_guild(ctx):
     return str(ctx.guild.id)
 
 
+async def is_processing(ctx):
+    if get_state(ctx) == None:
+        return False
+    result = await get_state(ctx).is_processing.get()
+    return result != 0
+
+
 
 # Checking related helper functions
 
@@ -339,25 +305,27 @@ async def get_or_join_voice(ctx):
         await ctx.send("You need to be in a voice channel.")
         return None
         
-    if not check_same_voice(ctx):
+    if not in_same_vc(ctx):
         await join(ctx)
     
     return ctx.voice_client
 
 
-def check_same_voice(ctx):
+def in_same_vc(ctx):
     return ctx.author.voice != None and ctx.voice_client != None and ctx.voice_client.channel == ctx.author.voice.channel
 
 
 async def assert_same_voice(ctx):
-    if not check_same_voice(ctx):
+    if not in_same_vc(ctx):
         await ctx.send("You need to be in the same voice chat as the bot.")
         return False
     return True
 
 
-async def check_if_question(ctx):
-    return get_state(ctx) != None and get_state(ctx).question_callback == None
+def vc_is_empty(vc):
+    channel = vc.channel
+    members = channel.members
+    return len([member for member in members if not member.bot]) == 0
 
 
 
@@ -380,9 +348,9 @@ async def search_callback(ctx, answer:str):
 
 
 async def get_playlist(query):
-    result = await asyncio.get_running_loop().run_in_executor(process_pool, playlist_task, query)
+    result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.playlist_task, query)
     tasks = [
-        asyncio.get_running_loop().run_in_executor(process_pool, stream_task, item[0])
+        asyncio.get_running_loop().run_in_executor(process_pool, tasks.stream_task, item[0])
         for item in result
     ]        
     results = await asyncio.gather(*tasks)
@@ -390,11 +358,11 @@ async def get_playlist(query):
 
 
 async def add_stream_to_queue(ctx, query):
-    if is_url(query):
-        result = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, query)
+    if utils.is_url(query):
+        result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.stream_task, query)
     else:
-        result = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, 1)
-        result = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, result[0][0])
+        result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.search_task, query, 1)
+        result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.stream_task, result[0][0])
 
     queue = get_state(ctx).queue
     await queue.put([result[0], result[1]])
@@ -402,38 +370,20 @@ async def add_stream_to_queue(ctx, query):
 
 
 async def search_youtube(ctx, query, limit):
-    result_list = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, limit, False)
+    result_list = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.search_task, query, limit, False)
     state = get_state(ctx)
     state.search_list = result_list
     return result_list
 
 
-
-# Util functions
-
-
-def is_url(string):
-    parsed = urlparse(string)
-    return all([parsed.scheme, parsed.netloc])
-
-
-def get_link_type(url):
-    if "list=" in url:
-        return "list"
-    if "watch?v=" in url:
-        return "video"
-    return "unknown"
-
-
-
-# Internal versions of command funcions
-
-
 async def play_internal(ctx, query, quiet=False):
+    is_processing = get_state(ctx).is_processing
+    await is_processing.increment()
     result = await add_stream_to_queue(ctx, query)
     print(f"Done processing song {result[1]} in guild {get_guild(ctx)}.")
     if not quiet:
         await ctx.send(f"Added to the list: **{result[1]}**")
+    await is_processing.decrement()
 
 
 
