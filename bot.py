@@ -188,19 +188,9 @@ async def search(ctx, *, query:str):
         message += f"{i}. **{item[1]}**\n"
 
     message += f"\nWrite {command_prefix}**answer <number>** to select"
-    message += f"\nWrite {command_prefix}**cancel** to cancel"
     print(f"Completed search for query {query} in guild {get_guild(ctx)}")
     await ctx.send(message)
 
-
-@bot.command()
-async def cancel(ctx):
-    result = await assert_same_voice(ctx)
-    if not result:
-        return
-
-    print(f"Canceled question in guild {get_guild(ctx)}.")
-    get_state(ctx).question_callback = None
 
 
 # Tasks to be run by executor
