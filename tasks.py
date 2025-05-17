@@ -7,6 +7,7 @@ def search_task(query, limit, noplaylist=True):
     'skip_download': True,
     'quiet': True,
     'noplaylist': noplaylist,
+    'cookiefile': 'cookies.txt'
     }
     with yt_dlp.YoutubeDL(search) as track_search:
         result = track_search.extract_info(f"ytsearch{limit}:{query}", download=False)['entries']
@@ -29,6 +30,7 @@ def playlist_task(query):
     'extract_flat': True,
     'skip_download': True,
     'quiet': True,
+    'cookiefile': 'cookies.txt'
     }
     with yt_dlp.YoutubeDL(search) as track_search:
         result = track_search.extract_info(query, download=False)['entries']
@@ -52,6 +54,7 @@ def stream_task(query):
     'quiet': True,
     'noplaylist': True,
     'format': 'bestaudio/best',
+    'cookiefile': 'cookies.txt'
     }
     
     with yt_dlp.YoutubeDL(stream) as stream_search:

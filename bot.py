@@ -333,13 +333,20 @@ def vc_is_empty(vc):
 
 
 async def search_callback(ctx, answer:str):
-    if not str.isdigit(answer):
+    answer_list = [item.strip() for item in answer.strip(',') if item.strip() and str.isdigit(item)]
+    if len(answer_list) == 0:
         await ctx.send("Searching can only be answered with (positive) numbers.")
         return
-    selected = get_state(ctx).search_list[int(answer) - 1]
-    print(f"Search callback function is called in guild {get_guild(ctx)}.")
-    await ctx.send(f"Selected **{selected[1]}**.")
-    await play_internal(ctx, selected[0])
+
+    if len(get_state(ctx).search_list) == 0:
+        await ctx.send("Ask a question first or wait for it to complete processing.")
+        return
+    
+    for answer in answer_list:
+        selected = get_state(ctx).search_list[int(answer) - 1]
+        print(f"Search callback function is called in guild {get_guild(ctx)}.")
+        await ctx.send(f"Selected **{selected[1]}**.")
+        asyncio.create_task(play_internal(ctx, selected[0]))
     get_state(ctx).question_callback = None
 
 
