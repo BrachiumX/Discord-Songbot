@@ -83,31 +83,28 @@ async def current(ctx):
 
 
 @bot.command(aliases=['p'])
-async def play(ctx, *, query:str):
+async def play(ctx, *, query:str = ""):
+    if not query.strip():
+        await ctx.send(f"Please enter a track after the command.")
+        return
+
+    items = [item.strip() for item in query.split(",") if item.strip()]
+
+    if len(items) == 0:
+        await ctx.send(f"Please enter a valid track after the command.")    
+        return
+
     result = await get_or_join_voice(ctx)
     if result == None:
         return
 
-    stream, title = await get_stream_youtube(ctx, query)
-    
-    print(f"Done processing song {title} in {get_guild(ctx)}.")
-    await ctx.send(f"Added to the list: **{title}**")
-
-
-@bot.command(aliases=['pm'])
-async def playmul(ctx, *, query:str):
-    result = await get_or_join_voice(ctx)
-    if result == None:
-        return
-
-    items = [item.strip() for item in query.split(",")]
     for item in items:
         asyncio.create_task(play_internal(ctx, item))
 
 
 @bot.command(aliases=['s'])
 async def skip(ctx):
-    if check_same_voice(ctx):
+    if not check_same_voice(ctx):
         return
 
     if ctx.voice_client and ctx.voice_client.is_playing():
@@ -145,10 +142,10 @@ async def help(ctx):
     message += f"**{command_prefix}queue** or **{command_prefix}q** to see queued songs\n"
     message += f"**{command_prefix}current** or **{command_prefix}c** to see the currently playing song\n"
     message += f"**{command_prefix}play <track>** or **{command_prefix}p <track>** to play a song from youtube\n"
-    message += f"**{command_prefix}playmul <track>, <track>** or **{command_prefix}pm <track>, <track>** to play multiple songs from youtube\n"
     message += f"**{command_prefix}skip** or **{command_prefix}s** to skip the currently playing song\n"
     message += f"**{command_prefix}join** or **{command_prefix}j** to have the bot join your current channel\n"
     message += f"**{command_prefix}leave** or **{command_prefix}l** to disconnect the bot from currently connected channel\n"
+    message += f"**{command_prefix}search <track>** or **{command_prefix}s <track>** to search for songs\n"
     await ctx.send(message)
 
 
@@ -163,7 +160,11 @@ async def answer(ctx, *, answer:str):
 
 
 @bot.command(aliases=['se'])
-async def search(ctx, *, query:str):
+async def search(ctx, *, query:str = ""):
+    if not query.strip():
+        await ctx.send(f"Please enter a track after the command.")
+        return
+
     result = await check_if_question(ctx)
     if result:
         return
