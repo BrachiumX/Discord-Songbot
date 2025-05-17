@@ -175,7 +175,7 @@ async def search(ctx, *, query:str):
     if is_url(query):
         await ctx.send("You cannot search with urls.")
         return
-    
+
     get_state(ctx).question_callback = search_callback
     limit = 10
     result_list = await search_youtube(ctx, query, limit)
@@ -189,10 +189,11 @@ async def search(ctx, *, query:str):
 
     message += f"\nWrite {command_prefix}**answer <number>** to select"
     message += f"\nWrite {command_prefix}**cancel** to cancel"
+    print(f"Completed search for query {query} in guild {get_guild(ctx)}")
     await ctx.send(message)
 
 
-@bot.command
+@bot.command()
 async def cancel(ctx):
     result = await assert_same_voice(ctx)
     if not result:
@@ -328,17 +329,18 @@ def get_guild(ctx):
 
 
 async def get_or_join_voice(ctx):
-    if not ctx.author.voice:
+    if ctx.author.voice == None:
         await ctx.send("You need to be in a voice channel.")
         return None
         
     if not check_same_voice(ctx):
         await join(ctx)
-        return ctx.voice_client
+    
+    return ctx.voice_client
 
 
 def check_same_voice(ctx):
-    return ctx.author.voice and ctx.voice_client and ctx.voice_client.channel == ctx.author.voice.channel
+    return ctx.author.voice != None and ctx.voice_client != None and ctx.voice_client.channel == ctx.author.voice.channel
 
 
 async def assert_same_voice(ctx):
