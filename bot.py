@@ -356,12 +356,7 @@ async def search_callback(ctx, answer:str):
 
 async def get_playlist(query):
     result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.playlist_task, query)
-    tasks = [
-        asyncio.get_running_loop().run_in_executor(process_pool, tasks.stream_task, item[0])
-        for item in result
-    ]        
-    results = await asyncio.gather(*tasks)
-    return results
+    return result
 
 
 async def add_stream_to_queue(ctx, query):
