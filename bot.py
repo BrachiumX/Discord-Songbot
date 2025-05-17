@@ -83,7 +83,7 @@ async def current(ctx):
 
 
 @bot.command(aliases=['p'])
-async def play(ctx, *, query:str = ""):
+async def play(ctx, *, query:str=""):
     if not query.strip():
         await ctx.send(f"Please enter a track after the command.")
         return
@@ -99,7 +99,13 @@ async def play(ctx, *, query:str = ""):
         return
 
     for item in items:
-        asyncio.create_task(play_internal(ctx, item))
+        if is_url(item) and get_link_type(item) == "list":
+            playlist = await get_playlist(item)
+            await ctx.send(f"Adding requested playlist {item}")
+            for i in playlist:
+                asyncio.create_task(play_internal(ctx, i[0], quiet=True))
+        else:
+            asyncio.create_task(play_internal(ctx, item))
 
 
 @bot.command(aliases=['s'])
@@ -124,15 +130,15 @@ async def queue(ctx):
     except:
         await ctx.send("Queue not found.")
         return
-    count = 0
     message = f"📋\n"
     message += f"Song Queue:\n"
     if len(items) == 0:
         await ctx.send(f"Song queue is empty.")
         return
-    for i in items:
-        message += f"{count}. **{i[1]}**\n"
-
+    for i, item in enumerate(items):
+        if len(message + f"{i}. **{item[1]}**\n") > 2000:
+            break
+        message += f"{i}. **{item[1]}**\n"
     await ctx.send(message)
 
 
@@ -160,7 +166,7 @@ async def answer(ctx, *, answer:str):
 
 
 @bot.command(aliases=['se'])
-async def search(ctx, *, query:str = ""):
+async def search(ctx, *, query:str=""):
     if not query.strip():
         await ctx.send(f"Please enter a track after the command.")
         return
@@ -186,8 +192,10 @@ async def search(ctx, *, query:str = ""):
         await ctx.send("No results.")
         return
     for i, item in enumerate(result_list):
-        message += f"{i}. **{item[1]}**\n"
-
+        message += f"{i}. **{item[1]}**"
+        if get_link_type(item[0]) == 'playlist':
+            message += f" (This is a playlist.)"
+        message += "\n"
     message += f"\nWrite {command_prefix}**answer <number>** to select"
     print(f"Completed search for query {query} in guild {get_guild(ctx)}")
     await ctx.send(message)
@@ -197,19 +205,41 @@ async def search(ctx, *, query:str = ""):
 # Tasks to be run by executor
 
 
-def search_task(query, limit):
+def search_task(query, limit, noplaylist=True):
     search = {
     'extract_flat': True,
     'skip_download': True,
     'quiet': True,
-    'noplaylist': True,
+    'noplaylist': noplaylist,
     }
     with yt_dlp.YoutubeDL(search) as track_search:
         result = track_search.extract_info(f"ytsearch{limit}:{query}", download=False)['entries']
         limit = min(limit, len(result))
         url, title = [], []
-        debug_message = f"Got these results for stream tasks for this query {query}.\n"
+        debug_message = f"Got these results for search tasks for the query {query}.\n"
         for i in range(limit):
+            if get_link_type(result[i]['url']) not in ["video", "playlist"]:
+                continue
+            url.append(result[i]['url'])
+            title.append(result[i]['title'])
+            debug_message += f"{i + 1}. Url: {result[i]['url']}, Title: {result[i]['title']}.\n"
+
+        print(debug_message)
+        return list(zip(url, title))
+
+def playlist_task(query):
+    search = {
+    'extract_flat': True,
+    'skip_download': True,
+    'quiet': True,
+    }
+    with yt_dlp.YoutubeDL(search) as track_search:
+        result = track_search.extract_info(query, download=False)['entries']
+        url, title = [], []
+        debug_message = f"Got these results for search tasks for the query {query}.\n"
+        for i in range(len(result)):
+            if get_link_type(result[i]['url']) not in ["video"]:
+                continue
             url.append(result[i]['url'])
             title.append(result[i]['title'])
             debug_message += f"{i + 1}. Url: {result[i]['url']}, Title: {result[i]['title']}.\n"
@@ -219,12 +249,6 @@ def search_task(query, limit):
     
 
 def stream_task(query):
-    search = {
-    'extract_flat': True,
-    'skip_download': True,
-    'quiet': True,
-    'noplaylist': True,
-    }
     stream = {
     'extract_flat': False,
     'skip_download': True,
@@ -234,18 +258,9 @@ def stream_task(query):
     }
     
     with yt_dlp.YoutubeDL(stream) as stream_search:
-        url = query
-        if not is_url(query):
-            with yt_dlp.YoutubeDL(search) as track_search:
-                result = track_search.extract_info(f"ytsearch:{query}", download=False)
-            url = result['entries'][0]['url']
-            title = result['entries'][0]['title']
-            info = stream_search.extract_info(url, download=False)
-            stream_url = info['url']
-        else:
-            info = stream_search.extract_info(url, download=False)
-            title = info['title']
-            stream_url = info['url']
+        info = stream_search.extract_info(query, download=False)
+        title = info['title']
+        stream_url = info['url']
         
         print(f"Got result {stream_url}, {title} for the query {query} in stream task.")
         return stream_url, title
@@ -359,18 +374,35 @@ async def search_callback(ctx, answer:str):
     await play_internal(ctx, selected[0])
     get_state(ctx).question_callback = None
 
+
+
 # Helper functions for commands
 
 
-async def get_stream_youtube(ctx, query):
+async def get_playlist(query):
+    result = await asyncio.get_running_loop().run_in_executor(process_pool, playlist_task, query)
+    tasks = [
+        asyncio.get_running_loop().run_in_executor(process_pool, stream_task, item[0])
+        for item in result
+    ]        
+    results = await asyncio.gather(*tasks)
+    return results
+
+
+async def add_stream_to_queue(ctx, query):
+    if is_url(query):
+        result = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, query)
+    else:
+        result = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, 1)
+        result = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, result[0][0])
+
     queue = get_state(ctx).queue
-    stream, title = await asyncio.get_running_loop().run_in_executor(process_pool, stream_task, query)
-    await queue.put([stream, title])
-    return stream, title
+    await queue.put([result[0], result[1]])
+    return result
 
 
 async def search_youtube(ctx, query, limit):
-    result_list = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, limit)
+    result_list = await asyncio.get_running_loop().run_in_executor(process_pool, search_task, query, limit, False)
     state = get_state(ctx)
     state.search_list = result_list
     return result_list
@@ -385,15 +417,23 @@ def is_url(string):
     return all([parsed.scheme, parsed.netloc])
 
 
+def get_link_type(url):
+    if "list=" in url:
+        return "list"
+    if "watch?v=" in url:
+        return "video"
+    return "unknown"
+
+
 
 # Internal versions of command funcions
 
 
-async def play_internal(ctx, query):
-    stream, title = await get_stream_youtube(ctx, query)
-    
-    print(f"Done processing song {title} in guild {get_guild(ctx)}.")
-    await ctx.send(f"Added to the list: **{title}**")
+async def play_internal(ctx, query, quiet=False):
+    result = await add_stream_to_queue(ctx, query)
+    print(f"Done processing song {result[1]} in guild {get_guild(ctx)}.")
+    if not quiet:
+        await ctx.send(f"Added to the list: **{result[1]}**")
 
 
 
