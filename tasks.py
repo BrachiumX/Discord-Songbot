@@ -47,7 +47,7 @@ def playlist_task(query):
         return list(zip(url, title))
     
 
-def stream_task(query):
+def stream_task(query, owner):
     stream = {
     'extract_flat': False,
     'skip_download': True,
@@ -63,4 +63,4 @@ def stream_task(query):
         stream_url = info['url']
         
         print(f"Got result {stream_url}, {title} for the query {query} in stream task.")
-        return stream_url, title
+        return utils.Video(owner, query, stream_url, title)

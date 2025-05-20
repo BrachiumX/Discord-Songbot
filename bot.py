@@ -25,7 +25,7 @@ state_dict = {}
 class State:
     def __init__(self, guild_id):
         self.guild_id = guild_id
-        self.queue = asyncio.Queue()
+        self.queue = utils.ThreadSafeQueue()
         self.currently_playing = ""
         self.question_callback = None
         self.search_list = []
@@ -83,7 +83,7 @@ async def current(ctx):
     if not ctx.voice_client or not ctx.voice_client.is_playing() or currently_playing == None:
         await ctx.send(f"Currently not playing a song.")
         return
-    await ctx.send(f"Currently playing: **{currently_playing}**")
+    await ctx.send(f"Currently playing: **{currently_playing.title}**\nRequested by {currently_playing.owner}\n{currently_playing.video_url}")
 
 
 @bot.command(aliases=['cl'])
@@ -91,7 +91,7 @@ async def clear(ctx):
     result = await assert_same_voice(ctx)
     if not result:
         return
-    get_state(ctx).queue = asyncio.Queue()
+    get_state(ctx).queue = utils.ThreadSafeQueue()
     await ctx.send(f"Cleared queue.")
 
 
@@ -154,9 +154,9 @@ async def queue(ctx):
         await ctx.send(f"Song queue is empty.")
         return
     for i, item in enumerate(items):
-        if len(message + f"{i}. **{item[1]}**\n") > 2000:
+        if len(message + f"{i}. **{item.title}** from {item.owner}\n") > 2000:
             break
-        message += f"{i}. **{item[1]}**\n"
+        message += f"{i}. **{item.title}**  from {item.owner}\n"
     await ctx.send(message)
 
 
@@ -171,6 +171,7 @@ async def help(ctx):
     message += f"**{command_prefix}join** or **{command_prefix}j** to have the bot join your current channel\n"
     message += f"**{command_prefix}leave** or **{command_prefix}l** to disconnect the bot from currently connected channel\n"
     message += f"**{command_prefix}search <track>** or **{command_prefix}se <track>** to search for songs\n"
+    message += f"**{command_prefix}remove <number>** or **{command_prefix}rm <number>** to remove song from the queue"
     await ctx.send(message)
 
 
@@ -228,6 +229,35 @@ async def search(ctx, *, query:str=""):
     await is_processing.decrement()
 
 
+@bot.command(aliases=['rm'])
+async def remove(ctx, *, request):
+    result = await assert_same_voice(ctx)
+    if not result:
+        return
+
+    queue = get_state(ctx).queue
+    length = await queue.length()
+    remove_list = [int(item.strip()) for item in request.split(',') if item.strip().isdigit()]
+
+    if len(remove_list) == 0:
+        await ctx.send("You can only remove by numbers.")
+
+    for item in remove_list:
+        if item > length:
+            await ctx.send(f"Please enter a number between 1 and {length}.")
+            return
+    
+    remove_list.sort(reverse=True)
+    removed_list = []
+
+    for item in remove_list:
+        removed = await queue.remove(item - 1)
+        removed_list.append(removed)
+
+    for item in removed_list:
+        await ctx.send(f"Removed **{item.title}** from queue\n{item.video_url}")
+    
+
 
 # Background tasks
 
@@ -258,7 +288,7 @@ async def player(ctx):
     queue = state.queue
     print(f"Player task is initialized in guild {get_guild(ctx)}.")
     while True:
-        [stream, title] = await queue.get()
+        current = await queue.pop()
         
         is_processing = get_state(ctx).is_processing
         await is_processing.increment()
@@ -267,11 +297,11 @@ async def player(ctx):
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
             'options': '-vn -bufsize 1M -rw_timeout 15000000',
         }
-        audio = discord.FFmpegPCMAudio(stream, **ffmpeg_options)
+        audio = discord.FFmpegPCMAudio(current.stream_url, **ffmpeg_options)
         vc.play(audio)
-        print(f"Now playing: {title} in guild {get_guild(ctx)}.")
-        await ctx.send(f"Now playing: **{title}**")
-        state.currently_playing = title
+        print(f"Now playing: {current.title} in guild {get_guild(ctx)}.")
+        await ctx.send(f"Now playing: **{current.title}**\nRequested by {current.owner}\n{current.video_url}")
+        state.currently_playing = current
         while vc.is_playing():
             await asyncio.sleep(1)
 
@@ -384,13 +414,13 @@ async def get_playlist(query):
 
 async def add_stream_to_queue(ctx, query):
     if utils.is_url(query):
-        result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.stream_task, query)
+        result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.stream_task, query, ctx.author.mention)
     else:
         result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.search_task, query, 1)
-        result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.stream_task, result[0][0])
+        result = await asyncio.get_running_loop().run_in_executor(process_pool, tasks.stream_task, result[0][0], ctx.author.mention)
 
     queue = get_state(ctx).queue
-    await queue.put([result[0], result[1]])
+    await queue.put(result)
     return result
 
 
@@ -405,9 +435,9 @@ async def play_internal(ctx, query, quiet=False):
     is_processing = get_state(ctx).is_processing
     await is_processing.increment()
     result = await add_stream_to_queue(ctx, query)
-    print(f"Done processing song {result[1]} in guild {get_guild(ctx)}.")
+    print(f"Done processing song {result.title} in guild {get_guild(ctx)}.")
     if not quiet:
-        await ctx.send(f"Added to the list: **{result[1]}**")
+        await ctx.send(f"Added to the list: **{result.title}**\nRequested by {result.owner}\n{result.video_url}")
     await is_processing.decrement()
 
 
