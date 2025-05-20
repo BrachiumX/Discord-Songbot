@@ -180,10 +180,13 @@ async def answer(ctx, *, answer:str):
     if not result:
         return
 
+    state = get_state(ctx)
+    if state.question_callback == None:
+        return
+
     is_processing = get_state(ctx).is_processing
     await is_processing.increment()
 
-    state = get_state(ctx)
     await state.question_callback(ctx, answer)
     await is_processing.decrement()
 
@@ -342,7 +345,7 @@ def vc_is_empty(vc):
 
 
 async def search_callback(ctx, answer:str):
-    answer_list = [item.strip() for item in answer.strip(',') if item.strip() and str.isdigit(item)]
+    answer_list = [int(item.strip()) for item in answer.split(',') if item.strip().isdigit()]
     if len(answer_list) == 0:
         await ctx.send("Searching can only be answered with (positive) numbers.")
         return
@@ -350,9 +353,20 @@ async def search_callback(ctx, answer:str):
     if len(get_state(ctx).search_list) == 0:
         await ctx.send("Ask a question first or wait for it to complete processing.")
         return
+
+    if len(answer_list) >= 20:
+        await ctx.send("Too many answers.")
+        return
+
+    search_list = get_state(ctx).search_list
+    length = len(search_list)
+    for answer in answer_list:
+        if answer > length or answer < 1:
+            await ctx.send(f"Your answers should be between 1 and {length}.")
+            return
     
     for answer in answer_list:
-        selected = get_state(ctx).search_list[int(answer) - 1]
+        selected = get_state(ctx).search_list[answer - 1]
         print(f"Search callback function is called in guild {get_guild(ctx)}.")
         await ctx.send(f"Selected **{selected[1]}**.")
         asyncio.create_task(play_internal(ctx, selected[0]))
