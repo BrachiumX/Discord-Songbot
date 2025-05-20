@@ -86,6 +86,15 @@ async def current(ctx):
     await ctx.send(f"Currently playing: **{currently_playing}**")
 
 
+@bot.command(aliases=['cl'])
+async def clear(ctx):
+    result = await assert_same_voice(ctx)
+    if not result:
+        return
+    get_state(ctx).queue = asyncio.Queue()
+    await ctx.send(f"Cleared queue.")
+
+
 @bot.command(aliases=['p'])
 async def play(ctx, *, query:str=""):
     if not query.strip():
@@ -161,7 +170,7 @@ async def help(ctx):
     message += f"**{command_prefix}skip** or **{command_prefix}s** to skip the currently playing song\n"
     message += f"**{command_prefix}join** or **{command_prefix}j** to have the bot join your current channel\n"
     message += f"**{command_prefix}leave** or **{command_prefix}l** to disconnect the bot from currently connected channel\n"
-    message += f"**{command_prefix}search <track>** or **{command_prefix}s <track>** to search for songs\n"
+    message += f"**{command_prefix}search <track>** or **{command_prefix}se <track>** to search for songs\n"
     await ctx.send(message)
 
 
